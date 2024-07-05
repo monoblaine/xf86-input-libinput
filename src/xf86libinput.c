@@ -129,6 +129,7 @@ struct xf86libinput {
 		struct scroll_axis {
 			int dist;
 			double fraction;
+			double scale;
 		} v, h;
 	} scroll;
 
@@ -1719,6 +1720,15 @@ calculate_axis_value(struct xf86libinput *driver_data,
 		 * proportionate - 120/15 is 8.
 		 */
 		value = value/dist * SCROLL_INCREMENT * 8;
+	}
+
+	switch (axis) {
+	case LIBINPUT_POINTER_AXIS_SCROLL_HORIZONTAL:
+		value *= driver_data->scroll.h.scale;
+		break;
+	case LIBINPUT_POINTER_AXIS_SCROLL_VERTICAL:
+		value *= driver_data->scroll.v.scale;
+		break;
 	}
 
 	*value_out = value;
@@ -3699,6 +3709,9 @@ xf86libinput_pre_init(InputDriverPtr drv,
 	driver_data->scroll.v.dist = 120;
 	driver_data->scroll.h.dist = 120;
 
+	driver_data->scroll.v.scale = 1;
+	driver_data->scroll.h.scale = 1;
+
 	if (!is_subdevice) {
 		if (libinput_device_has_capability(device, LIBINPUT_DEVICE_CAP_POINTER))
 			driver_data->capabilities |= CAP_POINTER;
@@ -3843,6 +3856,7 @@ static Atom prop_scroll_button;
 static Atom prop_scroll_button_default;
 static Atom prop_scroll_buttonlock;
 static Atom prop_scroll_buttonlock_default;
+static Atom prop_scroll_distance_scale;
 static Atom prop_scroll_pixel_distance;
 static Atom prop_scroll_pixel_distance_default;
 static Atom prop_click_methods_available;
@@ -4455,6 +4469,33 @@ LibinputSetPropertyScrollButtonLock(DeviceIntPtr dev,
 }
 
 static inline int
+LibinputSetPropertyScrollDistanceScale(DeviceIntPtr dev,
+				       Atom atom,
+				       XIPropertyValuePtr val,
+				       BOOL checkonly)
+{
+	InputInfoPtr pInfo = dev->public.devicePrivate;
+	struct xf86libinput *driver_data = pInfo->private;
+	float *data;
+
+	if (val->format != 32 || val->size != 2 || val->type != prop_float) {
+		LogMessageVerb(X_INFO, 0, "bad match");
+		return BadMatch;
+	}
+
+	data = (float*)val->data;
+	if (checkonly) {
+		if (!xf86libinput_check_device(dev, atom))
+			return BadMatch;
+	} else {
+		driver_data->scroll.v.scale = data[0];
+		driver_data->scroll.h.scale = data[1];
+	}
+
+	return Success;
+}
+
+static inline int
 LibinputSetPropertyClickMethod(DeviceIntPtr dev,
 			       Atom atom,
 			       XIPropertyValuePtr val,
@@ -4885,6 +4926,8 @@ LibinputSetProperty(DeviceIntPtr dev, Atom atom, XIPropertyValuePtr val,
 		rc = LibinputSetPropertyScrollButton(dev, atom, val, checkonly);
 	else if (atom == prop_scroll_buttonlock)
 		rc = LibinputSetPropertyScrollButtonLock(dev, atom, val, checkonly);
+	else if (atom == prop_scroll_distance_scale)
+		rc = LibinputSetPropertyScrollDistanceScale(dev, atom, val, checkonly);
 	else if (atom == prop_click_method_enabled)
 		rc = LibinputSetPropertyClickMethod(dev, atom, val, checkonly);
 	else if (atom == prop_middle_emulation)
@@ -5484,6 +5527,27 @@ LibinputInitScrollPixelDistanceProperty(DeviceIntPtr dev,
 }
 
 static void
+LibinputInitScrollDistanceScaleProperty(DeviceIntPtr dev,
+					struct xf86libinput *driver_data,
+					struct libinput_device *device)
+{
+	float scroll_distance_scale[2] = {driver_data->scroll.v.scale, driver_data->scroll.h.scale};
+
+	if (!subdevice_has_capabilities(dev, CAP_POINTER))
+		return;
+
+	prop_scroll_distance_scale = LibinputMakeProperty(dev,
+							  LIBINPUT_PROP_SCROLL_DISTANCE_SCALE,
+							  prop_float, 32,
+							  2, scroll_distance_scale);
+	if (!prop_scroll_distance_scale)
+		return;
+
+	scroll_distance_scale[0] = 1;
+	scroll_distance_scale[1] = 1;
+}
+
+static void
 LibinputInitClickMethodsProperty(DeviceIntPtr dev,
 				 struct xf86libinput *driver_data,
 				 struct libinput_device *device)
@@ -5903,6 +5967,7 @@ LibinputInitProperty(DeviceIntPtr dev)
 	LibinputInitNaturalScrollProperty(dev, driver_data, device);
 	LibinputInitDisableWhileTypingProperty(dev, driver_data, device);
 	LibinputInitScrollMethodsProperty(dev, driver_data, device);
+	LibinputInitScrollDistanceScaleProperty(dev, driver_data, device);
 	LibinputInitClickMethodsProperty(dev, driver_data, device);
 	LibinputInitMiddleEmulationProperty(dev, driver_data, device);
 	LibinputInitRotationAngleProperty(dev, driver_data, device);
