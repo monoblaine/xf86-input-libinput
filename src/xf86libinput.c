@@ -3709,8 +3709,8 @@ xf86libinput_pre_init(InputDriverPtr drv,
 	driver_data->scroll.v.dist = 120;
 	driver_data->scroll.h.dist = 120;
 
-	driver_data->scroll.v.scale = 1;
-	driver_data->scroll.h.scale = 1;
+	driver_data->scroll.v.scale = 0.5;
+	driver_data->scroll.h.scale = 0.5;
 
 	if (!is_subdevice) {
 		if (libinput_device_has_capability(device, LIBINPUT_DEVICE_CAP_POINTER))
